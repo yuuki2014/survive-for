@@ -4,20 +4,80 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>生き残るために</title>
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <h1>生き残るために</h1>
-  <p>AIが作る極限状況を生き延びろ。</p>
+  <main class="app">
+    <header class="hero">
+      <p class="theme">AI極限状況ローグライク</p>
+      <h1>生き残るために</h1>
+      <p class="lead">AIが作る極限状況を、あなたの言葉で生き延びろ。</p>
+      <button id="generateButton" class="primary-button">極限状況を生成する</button>
+    </header>
 
-  <button id="generateButton">極限状況を生成する</button>
+    <section id="scenario" class="game-card hidden">
+      <div class="meta-row">
+        <span id="genre" class="badge"></span>
+        <span id="turn" class="badge">Turn 1 / 7</span>
+      </div>
 
-  <section id="scenario" style="display: none;">
-    <h2 id="title"></h2>
-    <p id="openingText"></p>
-    <ul id="choices"></ul>
-  </section>
+      <h2 id="title" class="scenario-title"></h2>
+      <p id="goal" class="goal"></p>
 
-  <pre id="debug"></pre>
+      <div class="novel-window">
+				<div id="lastResultBlock" class="scene-block hidden">
+					<p class="scene-label">行動の結果</p>
+					<p id="lastResultText"></p>
+				</div>
+
+				<div id="reasonBlock" class="scene-block hidden">
+					<p class="scene-label">状況の変化</p>
+					<p id="reasonText"></p>
+				</div>
+
+				<div class="scene-block">
+					<p class="scene-label">現在の状況</p>
+					<p id="openingText"></p>
+				</div>
+			</div>
+
+      <div class="side-info">
+        <div>
+          <h3>持ち物</h3>
+          <ul id="items" class="item-list"></ul>
+        </div>
+
+        <div>
+          <h3>状態</h3>
+          <ul id="statusSummary" class="status-summary"></ul>
+        </div>
+      </div>
+
+      <div class="choices-wrap">
+        <h3>選択肢</h3>
+        <div id="choices" class="choices"></div>
+      </div>
+    </section>
+
+    <section id="actionArea" class="action-area hidden">
+      <label for="actionInput">自由に行動を書く</label>
+      <div class="action-form">
+        <input id="actionInput" type="text" placeholder="例：周囲を調べる" />
+        <button id="actionButton" class="primary-button">行動する</button>
+      </div>
+    </section>
+
+		<section id="endingAction" class="ending-action hidden">
+			<button id="endingButton" class="primary-button">結末を見る</button>
+		</section>
+
+    <section id="ending" class="ending"></section>
+
+    <details class="log-box">
+      <summary>これまでの行動</summary>
+      <section id="log"></section>
+    </details>
+  </main>
 
   <script src="/app.js"></script>
 </body>
