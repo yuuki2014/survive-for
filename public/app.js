@@ -1,3 +1,4 @@
+// 各種要素の取得
 const generateButton = document.querySelector("#generateButton");
 const scenarioSection = document.querySelector("#scenario");
 const titleEl = document.querySelector("#title");
@@ -24,11 +25,45 @@ const reasonTextEl = document.querySelector("#reasonText");
 const endingActionEl = document.querySelector("#endingAction");
 const endingButtonEl = document.querySelector("#endingButton");
 
-let pendingEndingPayload = null;
+const errorMessageEl = document.querySelector("#errorMessage");
+const createErrorMessageEl = document.querySelector("#createErrorMessage");
 
+let pendingEndingPayload = null;
+let selectedChoiceType = null;
+let plannedActionType = null;
+let plannedProgressGain = null;
+
+// 進行度の範囲
+const PROGRESS_GAIN_RANGES = {
+  excellent: [100, 150],
+  good: [70, 100],
+  neutral: [40, 70],
+  risky: [20, 130],
+  bad: [0, 35],
+  chaos: [-20, 170]
+};
+
+// エンディングラベル
+const ENDING_TYPE_LABELS = {
+  clear: "完全成功",
+  costly_survival: "代償つき生還",
+  ambiguous: "不完全決着",
+  bad: "バッドエンド"
+};
+
+// エンディングサブタイトル
+const ENDING_TYPE_SUBTITLES = {
+  clear: "目的を達成した",
+  costly_survival: "生き延びたが……",
+  ambiguous: "一区切りはついたが……",
+  bad: "危機を乗り越えられなかった"
+};
+
+// ゲームステートの初期化
 let gameState = {
   scenario: null,
   status: null,
+  progress: 0,
   currentSituation: "",
   turn: 1,
   turnLimit: 7,
@@ -36,10 +71,29 @@ let gameState = {
   gameOver: false
 };
 
+// ゲーム開始
 function startGame(scenario) {
+  // 既存のデータをクリア
+  clearError();
+  actionInputEl.value = "";
+  logEl.innerHTML = "";
+  endingEl.innerHTML = "";
+  pendingEndingPayload = null;
+
+  endingEl.classList.add("hidden");
+  endingActionEl.classList.add("hidden");
+  endingActionEl.classList.remove("flex");
+
+  actionAreaEl.classList.remove("hidden");
+  actionInputEl.disabled = false;
+  actionButtonEl.disabled = false;
+  actionButtonEl.textContent = "行動する";
+
+  // ゲームステートをセット
   gameState = {
     scenario,
     status: { ...scenario.initialStatus },
+    progress: 0,
     currentSituation: scenario.openingText,
     turn: 1,
     turnLimit: scenario.turnLimit || 7,
@@ -47,92 +101,77 @@ function startGame(scenario) {
     gameOver: false
   };
 
-  renderScenario(scenario);
-  renderTurn();
-  renderStatus();
-  renderChoices(scenario.choices);
-  scrollToGameTop();
+  renderScenario(scenario); // scenarioを元に新たにシナリオをセット
+  renderTurn(); // ターン部分を更新
+  renderStatus(); // 状態を更新
+  renderChoices(scenario.choices); // 選択肢を更新
+  scrollToGameTop(); // スクロールを上部へ移動
+  addStartLog(scenario); // ログに開始状況を追加
 }
 
+// 極限状況生成ボタン
 generateButton.addEventListener("click", async () => {
+  clearCreateError();
+
+  // ボタンの状態を変更
   generateButton.disabled = true;
   generateButton.textContent = "生成中...";
 
   try {
-    const res = await fetch("/api/create", {
+    const res = await fetch("/api/create", { // createにfetchして、新しい状態を取得
       method: "POST"
     });
 
-    const data = await res.json();
+    const rawText = await res.text();
 
-    if (!res.ok || !data.scenario) {
-      throw new Error(data.error || "生成に失敗しました");
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (error) {
+      throw new Error("AIの応答に失敗しました。もう一度試してください。");
     }
 
-    startGame(data.scenario);
+    if (!res.ok || !data.scenario) {
+      throw new Error(data.message || data.error || "生成に失敗しました");
+    }
+
+    startGame(data.scenario); // 取得したシナリオでゲームをスタート
   } catch (error) {
     console.log(`エラー: ${error.message}`);
+    showCreateError("エラーが発生しました。もう一度試してください。");
   } finally {
+    // ボタンの状態を戻す
     generateButton.disabled = false;
     generateButton.textContent = "極限状況を生成する";
   }
 });
 
-// function renderScenario(scenario) {
-//   titleEl.textContent = scenario.title;
-//   genreEl.textContent = `ジャンル：${scenario.genre}`;
-//   goalEl.textContent = `目的：${scenario.goal}`;
-//   openingTextEl.textContent = scenario.openingText;
-
-//   statusEl.innerHTML = "";
-//   Object.entries(scenario.initialStatus).forEach(([key, value]) => {
-//     const li = document.createElement("li");
-//     const label = scenario.statusLabels[key] || key;
-//     li.textContent = `${label}: ${value}`;
-//     statusEl.appendChild(li);
-//   });
-
-//   itemsEl.innerHTML = "";
-//   scenario.items.forEach((item) => {
-//     const li = document.createElement("li");
-//     li.textContent = item;
-//     itemsEl.appendChild(li);
-//   });
-
-//   choicesEl.innerHTML = "";
-//   scenario.choices.forEach((choice) => {
-//     const li = document.createElement("li");
-//     li.textContent = choice;
-//     choicesEl.appendChild(li);
-//   });
-
-//   scenarioSection.style.display = "block";
-// }
-
+// シナリオを描画
 function renderScenario(scenario) {
-  titleEl.textContent = scenario.title;
-  genreEl.textContent = scenario.genre;
-  goalEl.textContent = `目的：${scenario.goal}`;
-  openingTextEl.textContent = scenario.openingText;
+  titleEl.textContent = scenario.title; // タイトル
+  genreEl.textContent = scenario.genre; // ジャンル
+  goalEl.textContent = `目的：${scenario.goal}`; // 目的
+  openingTextEl.textContent = normalizeNovelText(scenario.openingText); // 開始時の文章
 
-  lastResultBlockEl.classList.add("hidden");
-  reasonBlockEl.classList.add("hidden");
-  lastResultTextEl.textContent = "";
-  reasonTextEl.textContent = "";
+  lastResultBlockEl.classList.add("hidden"); // 行動の結果を隠す
+  reasonBlockEl.classList.add("hidden"); // 状況の変化を隠す
+  lastResultTextEl.textContent = ""; // 行動の結果のテキストをクリア
+  reasonTextEl.textContent = ""; // 状況の変化のテキストをクリア
 
-  itemsEl.innerHTML = "";
+  itemsEl.innerHTML = ""; // アイテム一覧をクリア
+  // 新たにアイテムをセット
   scenario.items.forEach((item) => {
     const li = document.createElement("li");
     li.textContent = item;
     itemsEl.appendChild(li);
   });
 
-  scenarioSection.classList.remove("hidden");
+  scenarioSection.classList.remove("hidden"); // シナリオセクションを表示
 }
 
-
+// 行動するボタン
 actionButtonEl.addEventListener("click", async () => {
-  const action = actionInputEl.value.trim();
+  const action = actionInputEl.value.trim().slice(0, 50);
 
   if (!action || gameState.gameOver) return;
 
@@ -140,6 +179,9 @@ actionButtonEl.addEventListener("click", async () => {
   actionButtonEl.textContent = "判定中...";
 
   try {
+    clearError(); // エラー表示を消去
+
+    // プレイヤーの行動と現在の状態を送信してターン処理
     const res = await fetch("/api/turn", {
       method: "POST",
       headers: {
@@ -148,6 +190,11 @@ actionButtonEl.addEventListener("click", async () => {
       body: JSON.stringify({
         scenario: gameState.scenario,
         currentStatus: gameState.status,
+        progress: gameState.progress,
+        maxProgress: 700,
+        plannedActionType,
+        plannedProgressGain,
+        selectedChoiceType,
         currentSituation: gameState.currentSituation,
         turn: gameState.turn,
         turnLimit: gameState.turnLimit,
@@ -156,34 +203,49 @@ actionButtonEl.addEventListener("click", async () => {
       })
     });
 
-    const data = await res.json();
+    const rawText = await res.text(); // レスポンスを文字列として取得
 
-    if (!res.ok || !data.result) {
-      throw new Error(data.error || "ターン判定に失敗しました");
+    let data;
+    try {
+      data = JSON.parse(rawText); // レスポンスのJSONを解析
+    } catch {
+      throw new Error("AIの応答に失敗しました。もう一度試してください。"); // JSON形式で返ってきてない場合はエラー
     }
 
-    applyTurnResult(action, data.result);
-    actionInputEl.value = "";
+    if (!res.ok || !data.result) {
+      throw new Error(data.message || data.error || "ターン判定に失敗しました。もう一度試してください。");
+    }
+
+    applyTurnResult(action, data.result); // ターン処理の結果を反映させる
+    actionInputEl.value = ""; // ユーザーの入力したアクションを消す
   } catch (error) {
     console.log(`エラー: ${error.message}`);
+    showError("エラーが発生しました。もう一度試してください。"); // ユーザーにエラーを伝える
   } finally {
-    actionButtonEl.disabled = false;
-    actionButtonEl.textContent = "行動する";
+    if (!gameState.gameOver) {
+      actionButtonEl.disabled = false;
+      actionButtonEl.textContent = "行動する";
+    }
   }
 });
 
+// ターンの結果を描画
 function renderCurrentTurnResult(result) {
-  lastResultTextEl.textContent = result.narration || "";
+  lastResultTextEl.textContent = normalizeNovelText(result.narration) || "";
   reasonTextEl.textContent = result.judgement || result.reason || "";
-  openingTextEl.textContent = result.nextSituation || "";
+  openingTextEl.textContent = normalizeNovelText(result.nextSituation) || "";
 
   lastResultBlockEl.classList.remove("hidden");
   reasonBlockEl.classList.remove("hidden");
 }
 
+// ターンの結果を反映
 function applyTurnResult(action, result) {
   gameState.status = applyDelta(gameState.status, result.delta);
   gameState.currentSituation = result.nextSituation;
+
+  const progressGain = plannedProgressGain ?? resolveProgressGain(result.actionType, result.progressGain);
+  gameState.progress = clampProgress(gameState.progress + progressGain);
 
   gameState.history.push({
     turn: gameState.turn,
@@ -192,9 +254,17 @@ function applyTurnResult(action, result) {
     judgement: result.judgement || result.reason,
     nextSituation: result.nextSituation,
     summaryForNextTurn: result.summaryForNextTurn,
+    actionType: plannedActionType || result.actionType,
+    progressGain,
+    progress: gameState.progress,
     delta: result.delta
   });
 
+  selectedChoiceType = null;
+  plannedActionType = null;
+  plannedProgressGain = null;
+
+  // 現在のターンの結果とログを描画
   renderCurrentTurnResult(result);
   addLog(action, result);
   renderStatus();
@@ -203,6 +273,7 @@ function applyTurnResult(action, result) {
   const reachedTurnLimit = gameState.turn >= gameState.turnLimit;
   const shouldEnd = result.isGameOver || localGameOver.isGameOver || reachedTurnLimit;
 
+  // ゲーム終了時の処理
   if (shouldEnd) {
     gameState.gameOver = true;
 
@@ -213,7 +284,8 @@ function applyTurnResult(action, result) {
     renderGameEndNotice();
 
     prepareEndingButton({
-      endingType: reachedTurnLimit ? "survive_or_final" : localGameOver.endingType || "bad",
+      endingType: reachedTurnLimit ? decideEndingType() : localGameOver.endingType || "bad",
+      progress: gameState.progress,
       failedStatusKey: localGameOver.failedStatusKey,
       failedStatusLabel: localGameOver.failedStatusLabel
     });
@@ -222,23 +294,26 @@ function applyTurnResult(action, result) {
     return;
   }
 
-  renderChoices(result.choices);
+  renderChoices(result.choices); // 選択肢を描画
 
   gameState.turn += 1;
   renderTurn();
   scrollToGameTop();
 }
 
+// 選択肢をクリア
 function clearChoices() {
   choicesEl.innerHTML = "";
 }
 
+// ユーザーのアクションエリアを消す
 function hideActionArea() {
   actionAreaEl.classList.add("hidden");
   actionButtonEl.disabled = true;
   actionInputEl.disabled = true;
 }
 
+// ゲーム終了の描画
 function renderGameEndNotice() {
   const notice = document.createElement("div");
   notice.className = "game-end-notice";
@@ -248,6 +323,7 @@ function renderGameEndNotice() {
   choicesEl.appendChild(notice);
 }
 
+// ステータスの変化を適用
 function applyDelta(status, delta) {
   return {
     hp: clamp(status.hp + (delta.hp || 0)),
@@ -257,10 +333,12 @@ function applyDelta(status, delta) {
   };
 }
 
+// 範囲内の数値を返す
 function clamp(value) {
   return Math.max(0, Math.min(100, value));
 }
 
+// ゲームオーバー判定
 function checkGameOver() {
   const labels = gameState.scenario.statusLabels;
 
@@ -280,7 +358,7 @@ function checkGameOver() {
   };
 }
 
-
+// 状態部分の描画を更新
 function renderStatus() {
   statusSummaryEl.innerHTML = "";
 
@@ -293,10 +371,7 @@ function renderStatus() {
   });
 }
 
-function renderTurn() {
-  turnEl.textContent = `Turn ${gameState.turn} / ${gameState.turnLimit}`;
-}
-
+// ステータスの表示を作る
 function buildStatusSummary(status, labels) {
   return Object.entries(status).map(([key, value]) => {
     const label = labels[key] || key;
@@ -308,6 +383,12 @@ function buildStatusSummary(status, labels) {
   });
 }
 
+// ターン部分の描画を更新
+function renderTurn() {
+  turnEl.textContent = `Turn ${gameState.turn} / ${gameState.turnLimit}`;
+}
+
+// 選択肢を描画
 function renderChoices(choices) {
   choicesEl.innerHTML = "";
 
@@ -317,13 +398,20 @@ function renderChoices(choices) {
   }
 
   choices.forEach((choice) => {
+    const text = typeof choice === "string" ? choice : choice.text;
+    const type = typeof choice === "string" ? null : choice.type;
+
     const button = document.createElement("button");
     button.type = "button";
     button.className = "choice-button";
-    button.textContent = choice;
+    button.textContent = text;
 
     button.addEventListener("click", () => {
-      actionInputEl.value = choice;
+      actionInputEl.value = text;
+      selectedChoiceType = type;
+
+      plannedActionType = decideActionType(type);
+      plannedProgressGain = calculateProgressGainByActionType(plannedActionType);
     });
 
     choicesEl.appendChild(button);
@@ -332,6 +420,22 @@ function renderChoices(choices) {
   actionAreaEl.classList.remove("hidden");
 }
 
+// ログに開始状況を追加
+function addStartLog(scenario) {
+  const article = document.createElement("article");
+
+  article.innerHTML = `
+    <hr>
+    <p><strong>開始状況</strong></p>
+    <p><strong>タイトル:</strong> ${escapeHtml(scenario.title)}</p>
+    <p><strong>目的:</strong> ${escapeHtml(scenario.goal)}</p>
+    <p>${escapeHtml(normalizeNovelText(scenario.openingText))}</p>
+  `;
+
+  logEl.prepend(article);
+}
+
+// ログに現在のターンの情報を追加
 function addLog(action, result) {
   const article = document.createElement("article");
 
@@ -346,18 +450,55 @@ function addLog(action, result) {
   logEl.prepend(article);
 }
 
-function renderEnding(ending) {
+// エンディングを描画
+function renderEnding(ending, endingType) {
+  const label = ENDING_TYPE_LABELS[endingType] || "結末";
+  const subtitle = ENDING_TYPE_SUBTITLES[endingType] || "";
+  const progressText = `${gameState.progress} / 700`;
+
   endingEl.innerHTML = `
+    <div class="ending-type">
+      <span class="ending-type-label">${escapeHtml(label)}</span>
+      ${subtitle ? `<span class="ending-type-subtitle">${escapeHtml(subtitle)}</span>` : ""}
+      <span class="ending-type-subtitle">到達度：${escapeHtml(progressText)}</span>
+    </div>
     <h2>${escapeHtml(ending.endingTitle || "結果")}</h2>
-    <p>${escapeHtml(ending.endingText || String(ending))}</p>
+    <p>${escapeHtml(normalizeNovelText(ending.endingText || String(ending)))}</p>
   `;
 
-  endingEl.scrollIntoView({
-  behavior: "smooth",
-  block: "start"
-});
+  endingEl?.scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
 }
 
+// テキストを整形
+function normalizeNovelText(text) {
+  const normalized = String(text || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  if (normalized.includes("\n")) return normalized;
+
+  const sentences = normalized
+    .split("。")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => `${s}。`);
+
+  if (sentences.length <= 2) return normalized;
+
+  const paragraphs = [];
+
+  for (let i = 0; i < sentences.length; i += 2) {
+    paragraphs.push(sentences.slice(i, i + 2).join(""));
+  }
+
+  return paragraphs.join("\n\n");
+}
+
+// 文字列を無害化
 function escapeHtml(str) {
   return String(str)
     .replaceAll("&", "&amp;")
@@ -367,7 +508,7 @@ function escapeHtml(str) {
     .replaceAll("'", "&#039;");
 }
 
-
+// エンディング生成
 async function generateEnding({ endingType, failedStatusKey, failedStatusLabel }) {
   actionButtonEl.disabled = true;
   actionInputEl.disabled = true;
@@ -386,6 +527,8 @@ async function generateEnding({ endingType, failedStatusKey, failedStatusLabel }
       body: JSON.stringify({
         scenario: gameState.scenario,
         currentStatus: gameState.status,
+        progress: gameState.progress,
+        maxProgress: 700,
         currentSituation: gameState.currentSituation,
         history: gameState.history,
         endingType,
@@ -394,23 +537,29 @@ async function generateEnding({ endingType, failedStatusKey, failedStatusLabel }
       })
     });
 
-    const data = await res.json();
+    const rawText = await res.text();
 
-    if (!res.ok || !data.result) {
-      throw new Error(data.error || "エンディング生成に失敗しました");
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (error) {
+      throw new Error("AIの応答に失敗しました。もう一度試してください。");
     }
 
-    renderEnding(data.result);
+    if (!res.ok || !data.result) {
+      throw new Error(data.message || data.error || "エンディング生成に失敗しました");
+    }
+
+    renderEnding(data.result, endingType);
+    return true;
   } catch (error) {
-    renderEnding({
-      endingTitle: "終幕",
-      endingText: "あなたの旅はここで終わった。だが、その選択の積み重ねは、確かにこの世界に小さな痕跡を残している。"
-    });
+    console.log(`エラー: ${error.message}`);
+    showEndingError("エラーが発生しました。もう一度試してください。"); // ユーザーにエラーを伝える
+    return false;
   }
 }
 
-
-
+// ステータスによるエンディングタイプ分け
 function getEndingTypeByFailedStatus(key) {
   switch (key) {
     case "hp":
@@ -426,6 +575,7 @@ function getEndingTypeByFailedStatus(key) {
   }
 }
 
+// エンディングボタンをセット
 function prepareEndingButton(payload) {
   pendingEndingPayload = payload;
 
@@ -433,29 +583,147 @@ function prepareEndingButton(payload) {
   actionInputEl.disabled = true;
   actionAreaEl.classList.add("hidden");
 
+  endingButtonEl.disabled = false;
+
   endingActionEl.classList.remove("hidden");
   endingActionEl.classList.add("flex");
   endingEl.innerHTML = "";
 }
 
+// エンディングを見るボタン
 endingButtonEl.addEventListener("click", async () => {
   if (!pendingEndingPayload) return;
+
+  endingEl.classList.remove("hidden");
 
   endingButtonEl.disabled = true;
   endingButtonEl.textContent = "エンディング生成中...";
 
-  await generateEnding(pendingEndingPayload);
+  const success = await generateEnding(pendingEndingPayload);
 
-  endingActionEl.classList.remove("flex");
-  endingActionEl.classList.add("hidden");
-  endingButtonEl.disabled = true;
-  endingButtonEl.textContent = "エンディングを見る";
+  if (success) {
+    endingActionEl.classList.remove("flex");
+    endingActionEl.classList.add("hidden");
+    endingButtonEl.disabled = true;
+    endingButtonEl.textContent = "結末を見る";
+  } else {
+    endingButtonEl.disabled = false;
+    endingButtonEl.textContent = "結末を見る";
+  }
 });
 
+// エンディングの種類判定
+function decideEndingType() {
+  const p = gameState.progress;
+  const avgStatus = (gameState.status.hp + gameState.status.resource + gameState.status.safety + gameState.status.mental) / 4;
 
+  if (p >= 520 && avgStatus >= 35) return "clear";
+  if (p >= 400 && avgStatus >= 25) return "costly_survival";
+  if (p >= 280) return "ambiguous";
+  return "bad";
+}
+
+// 進行度のチェック
+function resolveProgressGain(actionType, aiProgressGain) {
+  const range = PROGRESS_GAIN_RANGES[actionType] || PROGRESS_GAIN_RANGES.neutral;
+  const [min, max] = range;
+
+  const n = Number(aiProgressGain);
+
+  if (Number.isFinite(n)) {
+    const rounded = Math.round(n);
+
+    if (rounded >= min && rounded <= max) {
+      return rounded;
+    }
+  }
+
+  return randomInt(min, max);
+}
+
+function clampProgress(value) {
+  return Math.max(0, Math.min(700, value));
+}
+
+// 範囲内の乱数を返す
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// スクロールバーを上部へ移動
 function scrollToGameTop() {
   scenarioSection.scrollIntoView({
     behavior: "smooth",
     block: "start"
   });
+}
+
+// エラーメッセージを表示
+function showError(message) {
+  errorMessageEl.textContent = message;
+}
+
+// エラーメッセージをクリア
+function clearError() {
+  errorMessageEl.textContent = "";
+}
+
+// エラーメッセージを表示
+function showCreateError(message) {
+  createErrorMessageEl.textContent = message;
+}
+
+// エラーメッセージをクリア
+function clearCreateError() {
+  createErrorMessageEl.textContent = "";
+}
+
+// エンディングエラーメッセージを表示
+function showEndingError(message) {
+  renderEnding({
+    endingTitle: "エンディング生成エラー",
+    endingText: message
+  });
+}
+
+actionInputEl.addEventListener("input", () => {
+  selectedChoiceType = null;
+  plannedActionType = null;
+  plannedProgressGain = null;
+});
+
+// 進行度セット
+function calculateProgressGainByActionType(actionType) {
+  const range = PROGRESS_GAIN_RANGES[actionType] || PROGRESS_GAIN_RANGES.neutral;
+  const [min, max] = range;
+
+  return randomInt(min, max);
+}
+
+function decideActionType(choiceType) {
+  const r = Math.random();
+
+  if (choiceType === "safe") {
+    if (r < 0.15) return "excellent";
+    if (r < 0.65) return "good";
+    if (r < 0.9) return "neutral";
+    return "bad";
+  }
+
+  if (choiceType === "bold") {
+    if (r < 0.25) return "excellent";
+    if (r < 0.55) return "good";
+    if (r < 0.75) return "risky";
+    return "bad";
+  }
+
+  if (choiceType === "chaos") {
+    if (r < 0.12) return "excellent";
+    if (r < 0.28) return "good";
+    if (r < 0.5) return "neutral";
+    if (r < 0.75) return "bad";
+    return "chaos";
+  }
+
+  return null; // 自由入力
 }

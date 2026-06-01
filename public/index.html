@@ -13,6 +13,7 @@
       <h1>生き残るために</h1>
       <p class="lead">極限状況を、あなたの言葉で生き延びろ。</p>
       <button id="generateButton" class="primary-button">極限状況を生成する</button>
+			<p id="createErrorMessage" class="error-message"></p>
     </header>
 
     <section id="scenario" class="game-card hidden">
@@ -60,15 +61,18 @@
     </section>
 
     <section id="actionArea" class="action-area hidden">
-      <label for="actionInput">自由に行動を書く</label>
+      <label for="actionInput">自由に行動を書く（50文字まで）</label>
       <div class="action-form">
-        <input id="actionInput" type="text" placeholder="例：周囲を調べる" />
+        <input id="actionInput" type="text" maxlength="50" placeholder="例：周囲を調べる" />
         <button id="actionButton" class="primary-button">行動する</button>
       </div>
+
+			<p id="errorMessage" class="error-message"></p>
     </section>
 
 		<section id="endingAction" class="ending-action hidden">
 			<button id="endingButton" class="primary-button">結末を見る</button>
+
 		</section>
 
     <section id="ending" class="ending"></section>
